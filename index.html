@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Short Stack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Shrikhand&display=swap">
+<style>
+/* Layout: one full-bleed 1950s diner counter. The guest check is the scoreboard. Single deliberate look, no dark variant. */
+:root {
+  --wall: #86cfc2;
+  --ink: #0e3a3a;
+  --cherry: #d12f35;
+  --paper: #fdfcf3;
+  --rule: #bfe0c8;
+  --chrome: #dfe8ea;
+  --display: "Shrikhand", Georgia, serif;
+  --type: "Courier Prime", "Courier New", monospace;
+}
+html, body { height: 100%; margin: 0; overflow: hidden; }
+[hidden] { display: none !important; }
+body { background: var(--wall); color: var(--ink); font-family: var(--type); font-size: 15px; }
+#game { position: relative; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; overflow: hidden; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.check {
+  background: repeating-linear-gradient(var(--paper) 0 21px, var(--rule) 21px 22px);
+  box-shadow: 0 3px 0 rgba(14,58,58,.25), 0 10px 22px rgba(14,58,58,.22);
+  color: var(--ink);
+}
+.check-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 11px; letter-spacing: .08em; color: var(--cherry); line-height: 22px; }
+.check-row { display: flex; justify-content: space-between; gap: 8px; line-height: 22px; font-variant-numeric: tabular-nums; }
+.check-row b { font-weight: 700; }
+
+#hud {
+  position: absolute; top: 12px; left: max(16px, env(safe-area-inset-left, 0px));
+  width: 164px; padding: 0 10px 2px; transform: rotate(-1.5deg); pointer-events: none;
+}
+.pips { letter-spacing: .1em; color: var(--cherry); }
+
+#sound {
+  position: absolute; top: 12px; right: max(16px, env(safe-area-inset-right, 0px));
+  font: 700 13px var(--type); color: var(--ink); background: var(--paper);
+  border: 2px solid var(--ink); padding: 7px 10px; cursor: pointer;
+}
+
+.btn {
+  font: 400 21px var(--display); color: var(--paper); background: var(--cherry);
+  border: 0; padding: 11px 28px 12px; cursor: pointer; box-shadow: 0 4px 0 #8c1a20;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #8c1a20; }
+button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+#menu {
+  position: absolute; left: 0; right: 0; top: max(28px, 6vh);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; justify-items: center; gap: 12px; text-align: center; pointer-events: none;
+}
+#menu h1 {
+  margin: 0; font: 400 clamp(52px, 13vw, 88px)/1 var(--display); color: var(--cherry);
+  text-shadow: 3px 3px 0 var(--paper); transform: rotate(-2deg); text-wrap: balance;
+}
+#menu p { margin: 0; max-width: 36ch; line-height: 1.4; font-weight: 700; text-wrap: balance; }
+#menu .btn { pointer-events: auto; }
+
+#over {
+  position: absolute; top: 50%; right: max(6vw, 16px); width: 300px; max-width: calc(100% - 32px);
+  padding: 8px 16px 18px; transform: translateY(-50%) rotate(1deg); cursor: default;
+}
+#over .rank { margin: 6px 0 2px; font: 400 27px/1.1 var(--display); color: var(--cherry); text-wrap: balance; }
+#over .why { margin: 0 0 8px; line-height: 22px; }
+#over .btn { width: 100%; margin-top: 12px; }
+@media (max-width: 859px) {
+  #over {
+    top: auto; bottom: 16px; right: auto; left: 50%; width: 340px;
+    transform: translateX(-50%); padding-bottom: 14px;
+  }
+  #over .rank { font-size: 23px; }
+}
+@media (max-width: 400px) { #over { width: calc(100% - 32px); } }
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="cv" aria-label="Pancake stacking game. Press Space to drop each pancake."></canvas>
+
+  <div id="hud" class="check" hidden>
+    <div class="check-head"><span>GUEST CHECK</span><span>No. 0419</span></div>
+    <div class="check-row"><span>Pancakes</span><b id="hScore">0</b></div>
+    <div class="check-row"><span>Height</span><b id="hHeight">0 in</b></div>
+    <div class="check-row"><span>Butter</span><b id="hPips" class="pips">&#9675;&#9675;&#9675;</b></div>
+    <div class="check-row"><span>Best</span><b id="hBest">0</b></div>
+  </div>
+
+  <div id="menu">
+    <h1>Short Stack</h1>
+    <p>Drop each pancake on the stack. Whatever hangs over the edge gets lost. Three perfect drops in a row earns some of it back.</p>
+    <button id="start" class="btn" type="button">Start</button>
+    <p id="menuHint">Click, tap or press Space to drop</p>
+  </div>
+
+  <div id="over" class="check" hidden aria-live="polite">
+    <div class="check-head"><span>ORDER UP</span><span>No. 0419</span></div>
+    <p class="rank" id="oRank"></p>
+    <p class="why" id="oWhy"></p>
+    <div class="check-row"><span>Pancakes</span><b id="oScore"></b></div>
+    <div class="check-row"><span>Height</span><b id="oHeight"></b></div>
+    <div class="check-row"><span>Perfect drops</span><b id="oPerfect"></b></div>
+    <div class="check-row"><span>Best</span><b id="oBest"></b></div>
+    <button id="again" class="btn" type="button">Cook another</button>
+  </div>
+
+  <button id="sound" type="button" aria-pressed="true">Sound on</button>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  const PH = 22, W0 = 200, R = 165, HOVER = 70, PLATE = 12, PERFECT = 7, IN_PER = 0.75;
+  const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DISPLAY = '"Shrikhand", Georgia, serif';
+  const load = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+  const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+  let cw, ch, dpr, s, viewH, ceil, narrow;
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    cw = innerWidth; ch = innerHeight;
+    cv.width = cw * dpr; cv.height = ch * dpr;
+    s = Math.min(cw / 430, ch / 640, 1.5);
+    viewH = ch / s;
+    ceil = viewH * .8 + 10;
+    narrow = cw < 860;
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  // Game state
+  let mode = 'menu', stack = [], cur = null, chunks = [], floats = [], crumbs = [];
+  let streak = 0, perfects = 0, best = +load('shortstack-best', 0) || 0, muted = load('shortstack-muted', '0') === '1';
+  let t = 0, endAt = 0, lockUntil = 0, marks = 0, shake = 0;
+  let cam = 0, zoom = 1, bf = .8, side = 1;
+
+  const tone = () => Math.floor(Math.random() * 3);
+  const cake = (x, w, extra) => ({ x, w, tone: tone(), sq: 0, drips: [], butter: false, ...extra });
+  const score = () => stack.length - 1;
+  const topY = () => PLATE + stack.length * PH;
+  const speed = () => Math.min(150 + score() * 7, 440);
+
+  function spawn() {
+    side = -side;
+    const w = stack[stack.length - 1].w;
+    const from = cw / 2 / s + w / 2 + 40;
+    cur = { x: side * from, w, dir: -side, side, entering: true, entry: (from - R) / .28, fall: false, vy: 0, tone: tone() };
+  }
+
+  function demo() {
+    stack = [0, -7, 5, -3, 2, 0].map(x => cake(x, W0));
+    stack[4].drips = dripsFor(stack[4]); stack[4].drips.forEach(d => d.len = d.max);
+    spawn();
+  }
+
+  function begin() {
+    mode = 'play'; streak = 0; perfects = 0; marks = 0; endAt = 0;
+    stack = [cake(0, W0)]; chunks = []; floats = []; crumbs = [];
+    $('menu').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+    hud(); spawn();
+  }
+
+  function dripsFor(p) {
+    return [-.4, -.1, .28].map(f => ({
+      x: f * p.w + (Math.random() - .5) * 14, len: 0, w: 5 + Math.random() * 4,
+      max: 16 + Math.random() * Math.min(70, stack.length * PH * .6)
+    }));
+  }
+
+  function hud() {
+    $('hScore').textContent = score();
+    $('hHeight').textContent = (score() * IN_PER).toFixed(1) + ' in';
+    const n = streak % 3;
+    $('hPips').textContent = '●'.repeat(n) + '○'.repeat(3 - n);
+    $('hBest').textContent = Math.max(best, score());
+  }
+
+  function float(text, x, y, size = 22, life = 1.1) { floats.push({ text, x, y, size, life, max: life }); }
+
+  function burst(x, y, n, color) {
+    if (STILL) return;
+    for (let i = 0; i < n; i++) crumbs.push({
+      x: x + (Math.random() - .5) * 30, y,
+      vx: (Math.random() - .5) * 200, vy: 60 + Math.random() * 180,
+      life: .5 + Math.random() * .3, color, r: 1.5 + Math.random() * 2
+    });
+  }
+
+  function drop() {
+    if (mode !== 'play' || !cur || cur.fall || cur.entering) return;
+    cur.fall = true; cur.vy = 160;
+    sweep(520, 300, .06, 'sine', .05);
+  }
+
+  function landed() {
+    const top = stack[stack.length - 1], dx = cur.x - top.x, w = top.w, overlap = w - Math.abs(dx);
+    if (overlap <= 0) {
+      chunks.push({ x: cur.x, y: topY(), w, vx: Math.sign(dx) * 90, vy: 0, rot: 0, vr: Math.sign(dx) * 4, tone: cur.tone });
+      cur = null; endAt = t + .85; shake = 8;
+      sweep(240, 60, .4, 'sawtooth', .1);
+      return;
+    }
+    const isPerfect = Math.abs(dx) <= PERFECT;
+    let nx = top.x, nw = w;
+    if (isPerfect) {
+      streak++; perfects++;
+      sweep(420 + streak * 60, 640 + streak * 80, .14, 'triangle', .14);
+      float(streak > 1 ? `Perfect x${streak}` : 'Perfect', 0, topY() + 56);
+    } else {
+      streak = 0; nw = overlap; nx = top.x + dx / 2;
+      const d = Math.abs(dx), dir = Math.sign(dx);
+      chunks.push({ x: top.x + dir * (w / 2 + d / 2), y: topY(), w: d, vx: dir * 70, vy: 0, rot: 0, vr: dir * (3 + Math.random() * 3), tone: cur.tone });
+      sweep(190, 90, .13, 'sine', .22);
+    }
+    const p = cake(nx, nw, { tone: cur.tone, sq: 1 });
+    stack.push(p);
+    burst(nx, topY() - PH, isPerfect ? 10 : 5, isPerfect ? '#7a3510' : '#e4b45c');
+    if (isPerfect) {
+      p.drips = dripsFor(p);
+      if (streak % 3 === 0) {
+        p.w = Math.min(W0, p.w + 20); p.butter = true;
+        float('Extra batter', 0, topY() + 86, 26, 1.3);
+        sweep(660, 1320, .3, 'triangle', .14);
+      }
+    }
+    shake = isPerfect ? 2 : 4;
+    milestones(); hud(); spawn();
+  }
+
+  function milestones() {
+    const list = [[ceil, 'Through the roof'], [ceil + 220, 'Above the clouds'], [ceil + 520, 'Pancakes in orbit'], [ceil + 800, 'Hello, moon']];
+    if (marks < list.length && topY() > list[marks][0]) {
+      float(list[marks][1], 0, topY() + 130, 34, 2.2);
+      sweep(520, 1040, .5, 'triangle', .14);
+      marks++;
+    }
+  }
+
+  function rankName(n) {
+    if (topY() > ceil + 520) return 'Orbital Breakfast';
+    if (topY() > ceil) return 'The Roof Raiser';
+    if (n >= 15) return 'The Lumberjack';
+    if (n >= 10) return 'Full Stack';
+    if (n >= 5) return 'Short Stack';
+    return 'Side Order';
+  }
+
+  function finish() {
+    mode = 'over'; lockUntil = performance.now() + 700;
+    const n = score(), record = n > best;
+    if (record) { best = n; save('shortstack-best', best); }
+    $('oRank').textContent = rankName(n);
+    $('oWhy').textContent = record && n > 0 ? 'New house record.' : 'The last one hit the counter.';
+    $('oScore').textContent = n;
+    $('oHeight').textContent = (n * IN_PER).toFixed(1) + ' in';
+    $('oPerfect').textContent = perfects;
+    $('oBest').textContent = best;
+    $('hud').hidden = true; $('over').hidden = false;
+  }
+
+  function update(dt) {
+    t += dt;
+    if (cur) {
+      if (cur.fall) {
+        cur.vy += 1500 * dt; cur.y -= cur.vy * dt;
+        if (cur.y <= topY()) landed();
+      } else {
+        const v = cur.entering ? cur.entry : speed();
+        cur.x += cur.dir * v * dt;
+        cur.y = topY() + HOVER;
+        if (cur.entering) { if (Math.abs(cur.x) <= R) cur.entering = false; }
+        else if (Math.abs(cur.x) >= R) { cur.x = Math.sign(cur.x) * R; cur.dir *= -1; }
+      }
+    }
+    if (endAt && t >= endAt) { endAt = 0; finish(); }
+
+    for (const c of chunks) { c.vy += 1300 * dt; c.y -= c.vy * dt; c.x += c.vx * dt; c.rot += c.vr * dt; }
+    chunks = chunks.filter(c => c.y > cam - 900);
+    for (const c of crumbs) { c.vy -= 700 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.life -= dt; }
+    crumbs = crumbs.filter(c => c.life > 0);
+    for (const f of floats) { f.y += 26 * dt; f.life -= dt; }
+    floats = floats.filter(f => f.life > 0);
+    for (const p of stack) {
+      p.sq *= Math.exp(-dt * 12);
+      for (const d of p.drips) d.len += (d.max - d.len) * (1 - Math.exp(-dt * 2));
+    }
+    shake *= Math.exp(-dt * 14);
+
+    const showing = mode === 'over';
+    const tbf = showing && narrow ? Math.max(.5, 1 - 290 / ch) : .8;
+    const room = tbf * ch / s - 50;
+    const tz = showing ? Math.min(1, room / (topY() + 30)) : 1;
+    const tcam = showing ? 0 : Math.max(0, topY() - .3 * viewH);
+    const k = 1 - Math.exp(-dt * (showing ? 2.6 : 5));
+    cam += (tcam - cam) * k; zoom += (tz - zoom) * k; bf += (tbf - bf) * k;
+  }
+
+  // Drawing
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  const TONES = [
+    ['#a9611f', '#e2a54a', '#f7d68c', '#b56c26'],
+    ['#b8702a', '#e9b259', '#fadf9b', '#bb7530'],
+    ['#9c5719', '#dc9a3e', '#f4cd7c', '#a8621f']
+  ].map(c => {
+    const g = ctx.createLinearGradient(0, -PH / 2, 0, PH / 2);
+    g.addColorStop(0, c[0]); g.addColorStop(.26, c[1]); g.addColorStop(.58, c[2]); g.addColorStop(1, c[3]);
+    return g;
+  });
+
+  function pancake(x, yBottom, w, tn, sq = 0, rot = 0) {
+    ctx.save();
+    ctx.translate(x, -(yBottom + PH / 2));
+    ctx.rotate(rot);
+    ctx.scale(1 + sq * .05, 1 - sq * .16);
+    ctx.fillStyle = TONES[tn];
+    rr(-w / 2, -PH / 2 + .5, w, PH - 1, 10);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function boomerang(x, y, c) {
+    ctx.strokeStyle = c;
+    ctx.beginPath(); ctx.moveTo(x - 18, y + 8); ctx.quadraticCurveTo(x, y - 18, x + 18, y + 8); ctx.stroke();
+  }
+
+  function backdrop(xh, yTop, yBot) {
+    // wall
+    ctx.fillStyle = '#86cfc2';
+    ctx.fillRect(-xh, -ceil, xh * 2, ceil);
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    for (let row = 0; row * 84 < Math.min(ceil, yTop); row++) {
+      for (let col = -Math.ceil(xh / 96); col * 96 < xh + 96; col++) {
+        const x = col * 96 + (row % 2 ? 48 : 0), y = -(row * 84 + 40);
+        boomerang(x, y, (row + col) % 3 ? 'rgba(14,58,58,.1)' : 'rgba(253,252,243,.32)');
+      }
+    }
+    // pendant lamps
+    for (const x of [-240, 240]) {
+      const y = ceil;
+      ctx.fillStyle = 'rgba(255,233,160,.16)';
+      ctx.beginPath(); ctx.arc(x, -(y - 104), 74, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0e3a3a'; ctx.fillRect(x - 1, -y, 2, 72);
+      ctx.fillStyle = '#d12f35';
+      ctx.beginPath(); ctx.moveTo(x - 9, -(y - 72)); ctx.lineTo(x + 9, -(y - 72)); ctx.lineTo(x + 28, -(y - 100)); ctx.lineTo(x - 28, -(y - 100)); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff3c4';
+      ctx.beginPath(); ctx.arc(x, -(y - 101), 9, 0, Math.PI); ctx.fill();
+    }
+    // sky, cut off at the roof
+    const sky0 = ceil + 34;
+    if (yTop > ceil) {
+      const g = ctx.createLinearGradient(0, -sky0, 0, -(sky0 + 620));
+      g.addColorStop(0, '#9fdcf0'); g.addColorStop(.4, '#4a8bdb'); g.addColorStop(.72, '#1b2a6e'); g.addColorStop(1, '#070a22');
+      ctx.fillStyle = g;
+      ctx.fillRect(-xh, -Math.max(yTop, sky0), xh * 2, Math.max(yTop, sky0) - sky0);
+      ctx.fillStyle = 'rgba(255,255,255,.88)';
+      for (const c of CLOUDS) {
+        const y = sky0 + c.y;
+        ctx.beginPath();
+        ctx.arc(c.x, -y, 22, 0, 7); ctx.arc(c.x + 26, -y - 8, 28, 0, 7); ctx.arc(c.x + 56, -y, 20, 0, 7);
+        ctx.fill();
+      }
+      for (const st of STARS) {
+        ctx.fillStyle = `rgba(255,255,255,${st.a})`;
+        ctx.fillRect(st.x, -(sky0 + st.y), st.r, st.r);
+      }
+      const my = sky0 + 870;
+      ctx.fillStyle = '#ece6d2';
+      ctx.beginPath(); ctx.arc(-150, -my, 54, 0, 7); ctx.fill();
+      ctx.fillStyle = '#cfc8b0';
+      ctx.beginPath(); ctx.arc(-168, -my - 14, 11, 0, 7); ctx.arc(-132, -my + 12, 15, 0, 7); ctx.arc(-138, -my - 26, 6, 0, 7); ctx.fill();
+    }
+    // ceiling and roof
+    ctx.fillStyle = '#f4efd8'; ctx.fillRect(-xh, -(ceil + 26), xh * 2, 26);
+    ctx.fillStyle = '#0e3a3a'; ctx.fillRect(-xh, -(ceil + 34), xh * 2, 8);
+    // counter
+    ctx.fillStyle = '#d12f35'; ctx.fillRect(-xh, 0, xh * 2, Math.max(-yBot, 1) + 40);
+    ctx.fillStyle = 'rgba(253,252,243,.22)';
+    for (let i = 1; i * 36 < -yBot + 40; i++) ctx.fillRect(-xh, 14 + i * 36, xh * 2, 3);
+    const g2 = ctx.createLinearGradient(0, 0, 0, 14);
+    g2.addColorStop(0, '#f6fbfc'); g2.addColorStop(.5, '#9fb2b7'); g2.addColorStop(1, '#e3ecee');
+    ctx.fillStyle = g2; ctx.fillRect(-xh, 0, xh * 2, 14);
+    // syrup jug on the counter, for wide screens
+    ctx.fillStyle = '#6d2f0d'; rr(-262, -66, 42, 66, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(-254, -56, 5, 42);
+    ctx.fillStyle = '#c7d5d9'; rr(-266, -80, 50, 16, 5); ctx.fill();
+    ctx.fillRect(-230, -92, 5, 14);
+    // plate
+    ctx.fillStyle = '#ffffff'; rr(-128, -PLATE, 256, 9, 5); ctx.fill();
+    ctx.fillStyle = '#b6cdd2'; rr(-88, -4, 176, 4, 2); ctx.fill();
+    ctx.fillStyle = '#d12f35'; ctx.fillRect(-120, -PLATE + 2, 240, 1.5);
+  }
+
+  const CLOUDS = [[-210, 40], [70, 110], [-120, 190], [150, 240], [-260, 300], [40, 330]].map(([x, y]) => ({ x, y }));
+  const STARS = Array.from({ length: 220 }, (_, i) => ({
+    x: ((i * 137.5) % 1100) - 550, y: 340 + ((i * 89.3) % 1100),
+    r: 1 + (i % 3) * .6, a: .35 + (i % 5) * .13
+  }));
+
+  function draw() {
+    const S = s * zoom, base = bf * ch;
+    const sx = shake * (STILL ? 0 : Math.sin(t * 70)), sy = shake * (STILL ? 0 : Math.cos(t * 55));
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#86cfc2'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(dpr * S, 0, 0, dpr * S, dpr * (cw / 2 + sx), dpr * (base + cam * S + sy));
+    const xh = cw / 2 / S + 30, yTop = cam + base / S + 30, yBot = cam - (ch - base) / S - 30;
+    backdrop(xh, yTop, yBot);
+
+    stack.forEach((p, i) => pancake(p.x, PLATE + i * PH, p.w, p.tone, p.sq));
+    // syrup and butter sit in front of the stack
+    stack.forEach((p, i) => {
+      const y = PLATE + (i + 1) * PH;
+      if (p.drips.length) {
+        ctx.fillStyle = '#6d2f0d';
+        rr(p.x - p.w * .44, -y - 1, p.w * .88, 5, 3); ctx.fill();
+        for (const d of p.drips) {
+          const len = Math.min(d.len, y - PLATE - 4);
+          rr(p.x + d.x - d.w / 2, -y, d.w, len, d.w / 2); ctx.fill();
+        }
+      }
+      if (p.butter) {
+        ctx.fillStyle = '#ffe27a'; rr(p.x - 15, -y - 7, 30, 11, 3); ctx.fill();
+        ctx.fillStyle = '#f5c842'; ctx.fillRect(p.x - 13, -y + 2, 26, 2);
+      }
+    });
+
+    if (cur) {
+      if (!cur.fall) {
+        const yb = cur.y, edge = cur.x + cur.side * cur.w * .34;
+        ctx.fillStyle = '#c7d5d9'; rr(cur.x - cur.w * .34, -yb, cur.w * .68, 4, 2); ctx.fill();
+        ctx.fillStyle = '#8a9ca1'; ctx.fillRect(cur.side > 0 ? edge : edge - 60, -yb - 1, 60, 4);
+        ctx.fillStyle = '#0e3a3a'; ctx.fillRect(cur.side > 0 ? edge + 60 : edge - 700, -yb - 2, 640, 7);
+      }
+      pancake(cur.x, cur.y, cur.w, cur.tone);
+    }
+    for (const c of chunks) pancake(c.x, c.y, c.w, c.tone, 0, c.rot);
+
+    for (const c of crumbs) {
+      ctx.fillStyle = c.color;
+      ctx.beginPath(); ctx.arc(c.x, -c.y, c.r, 0, 7); ctx.fill();
+    }
+    ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+    for (const f of floats) {
+      ctx.globalAlpha = Math.min(1, f.life / (f.max * .35));
+      ctx.font = `${f.size}px ${DISPLAY}`;
+      ctx.lineWidth = 5; ctx.strokeStyle = '#0e3a3a'; ctx.strokeText(f.text, f.x, -f.y);
+      ctx.fillStyle = '#fdfcf3'; ctx.fillText(f.text, f.x, -f.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, .033);
+    last = now;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+
+  // Sound
+  let ac;
+  function sweep(f0, f1, d, type, v) {
+    if (muted) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume();
+      const o = ac.createOscillator(), g = ac.createGain(), n = ac.currentTime;
+      o.type = type; o.frequency.setValueAtTime(f0, n); o.frequency.exponentialRampToValueAtTime(f1, n + d);
+      g.gain.setValueAtTime(v, n); g.gain.exponentialRampToValueAtTime(.001, n + d);
+      o.connect(g).connect(ac.destination); o.start(n); o.stop(n + d + .02);
+    } catch {}
+  }
+  function setSound(off) {
+    muted = off; save('shortstack-muted', off ? '1' : '0');
+    $('sound').textContent = off ? 'Sound off' : 'Sound on';
+    $('sound').setAttribute('aria-pressed', String(!off));
+  }
+
+  // Input
+  function act() {
+    if (mode === 'menu') begin();
+    else if (mode === 'play') drop();
+    else if (performance.now() >= lockUntil) begin();
+  }
+  addEventListener('pointerdown', e => { if (!e.target.closest('button')) act(); });
+  addEventListener('keydown', e => {
+    if (e.repeat) return;
+    if (e.key === 'm' || e.key === 'M') return setSound(!muted);
+    if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowDown') {
+      if (e.target.closest && e.target.closest('button')) return;
+      e.preventDefault(); act();
+    }
+  });
+  $('start').addEventListener('click', e => { e.currentTarget.blur(); begin(); });
+  $('again').addEventListener('click', e => { e.currentTarget.blur(); if (performance.now() >= lockUntil) begin(); });
+  $('sound').addEventListener('click', e => { setSound(!muted); e.currentTarget.blur(); });
+
+  if (best) $('menuHint').textContent = `Best so far: ${best} pancakes`;
+  setSound(muted);
+  demo();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
